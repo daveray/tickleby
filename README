@@ -6,3 +6,7 @@ To run:
 
   ruby lib/tickleby.rb test.tcl
 
+Tests:
+
+  rake
+
