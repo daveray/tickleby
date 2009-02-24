@@ -1,0 +1,8 @@
+Copyright (c) 2009, Dave Ray <daveray@gmail.com>
+
+Tickleby - Simple implementation of a Tcl interpreter in Ruby.
+
+To run:
+
+  ruby lib/tickleby.rb test.tcl
+
