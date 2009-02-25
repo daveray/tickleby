@@ -40,7 +40,7 @@ class TclProcCommand
         frame.set_variable name, value 
       end
 
-      return interp.eval(@body)
+      return interp.eval(TclStringInput.new(@body))
     end
   end
 

@@ -1,18 +1,16 @@
-# Are we being run from the command-line?
-tickleby_main = $0 =~ Regexp.compile("#{__FILE__}$")
-
 # Add lib to load path
 $LOAD_PATH.unshift File.dirname(__FILE__)
 
 # Require the library
+require 'tickleby/input'
 require 'tickleby/commands'
 require 'tickleby/interp'
 
 # If we're running from the command-line ...
-if tickleby_main
+if $0 == __FILE__
   interp = TclInterp.new
   ARGV.each do |arg|
-    interp.eval(IO.read(arg))
+    interp.eval(TclStringInput.new(IO.read(arg)))
   end
 end
 

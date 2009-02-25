@@ -60,14 +60,10 @@ class TclInterp
 
   # Evaluate the given input string in this interpreter
   def eval(input)
-    if input.is_a? String 
-      input = input.split(//u)
-    end
     return_flag = nil
-    i = 0
     result = ""
-    while i < input.length
-      words, i = parse_command(input, i)
+    while not input.eof?
+      words = parse_command(input)
       result = eval_command(words)
       if @return_flag
         return result
@@ -104,103 +100,103 @@ class TclInterp
   # as a pair. Consumes leading whitespace and comment. If embedded is true,
   # this is treated as an embedded command that starts and ends with square
   # brackets.
-  def parse_command(input, s, embedded = false)
+  def parse_command(input, embedded = false)
     words = []
 
-    if embedded then s += 1 end # skip bracket
+    if embedded then input.consume end # skip bracket
 
-    i = consume_whitespace(input, s)
-    while look_ahead(input, i) == '#'
-      i = consume_comment(input, i)
-      i = consume_whitespace(input, i)
+    consume_whitespace(input)
+    while input.look_ahead == '#'
+      consume_comment(input)
+      consume_whitespace(input)
     end
 
-    while i < input.length do
-      c = input[i]
+    while not input.eof? do
+      c = input.look_ahead
       case c
         # a new line or semi-colon ends a command
-        when ";"  : return words, i + 1
-        when "\n" : return words, i + 1
+        when ";"  : input.consume; return words
+        when "\n" : input.consume; return words
         when "\"" : 
-          word, i = parse_quoted_word(input, i)
+          word = parse_quoted_word(input)
           words << word
         when "{" :
-          word, i = parse_braced_word(input, i)
+          word = parse_braced_word(input)
           words << word
         # skip all other whitespace
         when /\s/ :
-          i += 1
+          input.consume
       else
         # If this is an embedded command, check for closing bracket
         # otherwise the bracket is the start of an unquoted word.
 
         if embedded and c == "]"
-          return words, i + 1
+          input.consume
+          return words
         end
 
         # everything else is handled as an unquoted word
-        word, i = parse_unquoted_word(input, i, true)
+        word = parse_unquoted_word(input, true)
         words << word
       end
     end
-    return words, i
+    return words
   end
 
   # Parse an unquoted word. Performs variable and command interpolation
   # as necessary. Returns word and index just after word as a pair. If
   # end_at_close_bracket is true, the word will end at the first closing
   # bracket.
-  def parse_unquoted_word(input, s, end_at_close_bracket = false)
-    i = s
+  def parse_unquoted_word(input, end_at_close_bracket = false)
     result = ""
-    while i < input.length do
-      c = input[i]
+    while not input.eof? do
+      c = input.look_ahead
       case c
-        when /\s/ : return result, i
-        when ";" : return result, i
+        when /\s/ : return result
+        when ";" : return result
         when "\\" : 
-          decoded, i = decode_escape(input, i)
+          decoded = decode_escape(input)
           result += decoded
         when "$"  : 
-          resolved, i = parse_and_resolve_variable(input, i)
+          resolved = parse_and_resolve_variable(input)
           result += resolved
         when "["  :
-          words, i = parse_command input, i, true
+          words = parse_command(input, true)
           result += eval_command words
       else
         if end_at_close_bracket and c == "]"
-          return result, i
+          return result
         end
 
         result += c
-        i += 1
+        input.consume
       end
     end
-    return result, i
+    return result
   end
 
   # Parse a quoted word. Assumes that s points at an opening quote.
   # Performs variable and command interpolation. Returns contents of
   # word without quotes and index just after closing quote as a pair.
-  def parse_quoted_word(input, s)
-    i = s += 1 # skip starting quote
+  def parse_quoted_word(input)
+    input.consume # skip starting quote
     result = ""
-    while i < input.length do
-      c = input[i]
+    while not input.eof? do
+      c = input.look_ahead
       case c
-        when "\"" : return result, i + 1
+        when "\"" : input.consume; return result
         when "\\" : 
-          decoded, i = decode_escape(input, i)
+          decoded = decode_escape(input)
           result += decoded
         when "$"  : 
-          resolved, i = parse_and_resolve_variable(input, i)
+          resolved = parse_and_resolve_variable(input)
           result += resolved
         when "["  :
-          words, i = parse_command input, i, true
+          words = parse_command input, true
           result += eval_command words
       else
         result += c
-        i += 1
+        input.consume
       end
     end
 
@@ -210,30 +206,30 @@ class TclInterp
 
   # Parse a "braced" word. Assumes that s points at an opening brace.
   # Returns contents of braces and index just after closing brace as a pair.
-  def parse_braced_word(input, s)
-    i = s + 1 # skip starting brace
+  def parse_braced_word(input)
+    input.consume
     result = ""
-    while i < input.length do
-      c = input[i]
+    while not input.eof? do
+      c = input.look_ahead
       case c
-        when "}" : return result, i + 1
+        when "}" : input.consume; return result
         when "{" :
-          sub, i = parse_braced_word(input, i)
+          sub = parse_braced_word(input)
           result += rebrace(sub)
-          i -= 1
+          input.consume -1  #      i -= 1
         when "\\" : 
           # only backslash newline, backslash, and braces
-          la = look_ahead(input, i + 1)
+          la = input.look_ahead(1)
           if ["\n", "}", "{", "\\"].include? la
             result += la
-            i += 1
+            input.consume
           else
             result += c
           end
       else
         result += c
       end
-      i += 1
+      input.consume
     end
   
     # TODO: better error
@@ -244,51 +240,63 @@ class TclInterp
   # that s points at a variable starter, i.e. $. Returns value of variable
   # and index right after variable as a pair. Raises an error if variable is
   # not found
-  def parse_and_resolve_variable(input, s)
-    name, e = parse_variable input, s
+  def parse_and_resolve_variable(input)
+    name = parse_variable input
     value = @stack[-1].variables[name]
     if !value
       raise "No such variable '#{name}'"
     end
-    return value, e
+    return value
   end
 
   # Parse a variable from input starting at index s. Is is assumed that s
   # points at a variable starter, i.e. $. Returns name of variable and
   # index right after variable as a pair.
-  def parse_variable(input, s)
-    if '{' == look_ahead(input, s+1)
-      parse_braced_variable(input, s)
+  def parse_variable(input)
+    if '{' == input.look_ahead(1)
+      parse_braced_variable(input)
     else
-      parse_normal_variable(input, s)
+      parse_normal_variable(input)
     end
   end
 
   # Parse a "normal" variable. Returns variable name (no dollar sign) and
   # index right after end of variable name as a pair. It is assumed that
   # s points at a variable starter, i.e. $
-  def parse_normal_variable(input, s)
-    i = s += 1 # skip $
-    while i < input.length do
-      case input[i]
-        when /\w|\d|[_:]/ : i += 1
+  def parse_normal_variable(input)
+    input.consume # skip $
+    array_name = ""
+    while not input.eof? do
+      c = input.look_ahead
+      case c
+        when /\w|\d|[_:]/ :
+          array_name << c
+          input.consume
         when '('
-          array_index, e = parse_array_index input, i
-          return input[s ... i].join + array_index , e
+          array_index = parse_array_index input
+          return array_name + array_index
       else
-        return input[s ... i].join, i
+        return array_name
       end
     end
   end
 
-  def parse_array_index(input, s)
-    i = s + 1 # skip (
-    while i < input.length do
-      case input[i]
-        when /\w|\d|[_,]/ : i += 1
-        when ')'          : return input[s .. i].join, i + 1
+  def parse_array_index(input)
+    index = input.look_ahead
+    input.consume # skip (
+    while not input.eof? do
+      c = input.look_ahead
+      case c
+        when /\w|\d|[_,]/ : 
+          index << c
+          input.consume
+        when ')'          : 
+          index << c
+          input.consume
+          return index
       else 
-          return input[s ... i].join, i + 1
+        input.consume
+        return index
       end
     end
   end
@@ -296,49 +304,45 @@ class TclInterp
   # Parse a variable with name in braces, e.g. ${var name}. Returns variable
   # name (no braces) and index right after closing brace as a pair. Is is
   # assumed that s points at a brace variable starter, i.e. ${
-  def parse_braced_variable(input, s)
-    i = s += 2  # skip ${
-    while i < input.length do
-      if input[i] == '}'
-        return input[s ... i].join, i + 1
+  def parse_braced_variable(input)
+    input.consume(2) # skip ${
+    name = ""
+    while not input.eof? do
+      c = input.look_ahead
+      if c == '}'
+        input.consume
+        return name
       end
-      i += 1
+      name << c
+      input.consume
     end
-    return input[s ... i].join, i
+    return name
   end
 
   # Consume a Tcl comment from the given input starting at index s. It
   # is assumed that s points at a comment starter (#). Returns index of
   # first non-comment character
-  def consume_comment(input, s)
-    while s < input.length do
-      case input[s]
+  def consume_comment(input)
+    while not input.eof? do
+      case input.look_ahead
         when "\\" : 
           # In comments, only escaped backslashes and line endings matter
-          if ["\n", "\\"].include? look_ahead(input, s + 1)
-            s += 1
+          if ["\n", "\\"].include? input.look_ahead(1)
+            input.consume
           end
-        when "\n" : return s + 1
+        when "\n" : input.consume; return
       end
-      s += 1
+      input.consume
     end
-    return s
   end
 
   # Consume whitespace from input starting at index s. Returns index of
   # first non-space character
-  def consume_whitespace(input, s)
-    while s < input.length do
-      if !(/\s/ =~ input[s]) then return s end
-      s += 1
+  def consume_whitespace(input)
+    while not input.eof? do
+      if !(/\s/ =~ input.look_ahead) then return end
+      input.consume
     end
-    return s
-  end
-
-  # Look ahead to index i of the given input array. Returns an empty
-  # string if i is out of bounds.
-  def look_ahead(input, i)
-    if i < input.length then input[i] else "" end
   end
 
   # Slap s and e at the start and end of value
@@ -356,22 +360,25 @@ class TclInterp
   # that s points at a backslash that starts the escape sequence. 
   # Returns the decode string and the index just after the escape sequence
   # as a pair.
-  def decode_escape(input, s)
-    c = look_ahead(input, s + 1)
+  def decode_escape(input)
+    c = input.look_ahead(1)
     case c
-      when "a" : return "\a", s + 2
-      when "b" : return "\b", s + 2
-      when "f" : return "\f", s + 2
-      when "n" : return "\n", s + 2
-      when "r" : return "\r", s + 2
-      when "t" : return "\t", s + 2
-      when "v" : return "\v", s + 2
-      when "\\" : return "\\", s + 2
+      when "a" : result = "\a"
+      when "b" : result = "\b"
+      when "f" : result = "\f"
+      when "n" : result = "\n"
+      when "r" : result = "\r"
+      when "t" : result = "\t"
+      when "v" : result = "\v"
+      when "\\" : result = "\\"
       when /[01234567]/ : raise "Escaped octal Unicode not supported"
       when "x"  : raise "Escaped hex Unicode not supported"
       when "u"  : raise "Escaped Unicode not supported"
+    else
+      result = c
     end
-    return c, s + 2 
+    input.consume 2
+    return result
   end
 
 end
