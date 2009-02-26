@@ -105,39 +105,28 @@ class TclInterp
 
     if embedded then input.consume end # skip bracket
 
-    consume_whitespace(input)
-    while input.look_ahead == '#'
-      consume_comment(input)
-      consume_whitespace(input)
-    end
+    consume_comments_and_whitespace input
 
     while not input.eof? do
       c = input.look_ahead
       case c
         # a new line or semi-colon ends a command
-        when ";"  : input.consume; return words
-        when "\n" : input.consume; return words
-        when "\"" : 
-          word = parse_quoted_word(input)
-          words << word
-        when "{" :
-          word = parse_braced_word(input)
-          words << word
+        when /[;|\n]/ : input.consume; break
+        when '"'      : words << parse_quoted_word(input)
+        when '{'      : words << parse_braced_word(input)
         # skip all other whitespace
-        when /\s/ :
-          input.consume
+        when /\s/     : input.consume
       else
         # If this is an embedded command, check for closing bracket
         # otherwise the bracket is the start of an unquoted word.
 
         if embedded and c == "]"
           input.consume
-          return words
+          break
         end
 
         # everything else is handled as an unquoted word
-        word = parse_unquoted_word(input, true)
-        words << word
+        words << parse_unquoted_word(input, true)
       end
     end
     return words
@@ -152,20 +141,13 @@ class TclInterp
     while not input.eof? do
       c = input.look_ahead
       case c
-        when /\s/ : return result
-        when ";" : return result
-        when "\\" : 
-          decoded = decode_escape(input)
-          result += decoded
-        when "$"  : 
-          resolved = parse_and_resolve_variable(input)
-          result += resolved
-        when "["  :
-          words = parse_command(input, true)
-          result += eval_command words
+        when /[;|\s]/ : break
+        when "\\"     : result += decode_escape(input)
+        when "$"      : result += parse_and_resolve_variable(input)
+        when "["      : result += eval_command(parse_command(input, true))
       else
         if end_at_close_bracket and c == "]"
-          return result
+          break
         end
 
         result += c
@@ -185,15 +167,9 @@ class TclInterp
       c = input.look_ahead
       case c
         when "\"" : input.consume; return result
-        when "\\" : 
-          decoded = decode_escape(input)
-          result += decoded
-        when "$"  : 
-          resolved = parse_and_resolve_variable(input)
-          result += resolved
-        when "["  :
-          words = parse_command input, true
-          result += eval_command words
+        when "\\" : result += decode_escape(input)
+        when "$"  : result += parse_and_resolve_variable(input)
+        when "["  : result += eval_command(parse_command(input, true))
       else
         result += c
         input.consume
@@ -214,9 +190,8 @@ class TclInterp
       case c
         when "}" : input.consume; return result
         when "{" :
-          sub = parse_braced_word(input)
-          result += rebrace(sub)
-          input.consume -1  #      i -= 1
+          result += rebrace(parse_braced_word(input))
+          input.consume -1  # back up one
         when "\\" : 
           # only backslash newline, backslash, and braces
           la = input.look_ahead(1)
@@ -273,8 +248,7 @@ class TclInterp
           array_name << c
           input.consume
         when '('
-          array_index = parse_array_index input
-          return array_name + array_index
+          return array_name + parse_array_index(input)
       else
         return array_name
       end
@@ -309,14 +283,21 @@ class TclInterp
     name = ""
     while not input.eof? do
       c = input.look_ahead
+      input.consume
       if c == '}'
-        input.consume
-        return name
+        break
       end
       name << c
-      input.consume
     end
     return name
+  end
+
+  def consume_comments_and_whitespace(input)
+    consume_whitespace(input)
+    while input.look_ahead == '#'
+      consume_comment(input)
+      consume_whitespace(input)
+    end
   end
 
   # Consume a Tcl comment from the given input starting at index s. It
@@ -330,7 +311,7 @@ class TclInterp
           if ["\n", "\\"].include? input.look_ahead(1)
             input.consume
           end
-        when "\n" : input.consume; return
+        when "\n" : input.consume; break 
       end
       input.consume
     end
@@ -339,20 +320,19 @@ class TclInterp
   # Consume whitespace from input starting at index s. Returns index of
   # first non-space character
   def consume_whitespace(input)
-    while not input.eof? do
-      if !(/\s/ =~ input.look_ahead) then return end
+    while /\s/ =~ input.look_ahead do
       input.consume
     end
   end
 
   # Slap s and e at the start and end of value
-  def restore_ends(value, s, e) return s + value + e end
+  def restore_ends(value, s, e = s) return s + value + e end
 
   # Slap braces around the given string
   def rebrace(value) return restore_ends(value, "{", "}") end
 
   # Slap quotes around the given string
-  def requote(value) return restore_ends(value, '"', '"') end
+  def requote(value) return restore_ends(value, '"') end
 
   # Decode a Tcl escape sequence.
   #
@@ -382,3 +362,4 @@ class TclInterp
   end
 
 end
+
