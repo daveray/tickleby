@@ -1,9 +1,9 @@
 require File.expand_path(File.join(File.dirname(__FILE__), '/../helper'))
 
-describe TclSetCommand do
+describe Tickleby::SetCommand do
   
   before(:each) do
-    @interp = TclInterp.new
+    @interp = Tickleby::Interp.new
     @command = @interp.commands["set"]
   end
 
@@ -13,7 +13,7 @@ describe TclSetCommand do
     @interp.with_new_frame do 
       result = @command.call @interp, ['a', 'b']
     end
-    frame.variables['a'].should == 'b'
+    frame.get_variable('a').should == 'b'
     result.should == 'b'
   end
 
@@ -27,10 +27,36 @@ describe TclSetCommand do
   end
 end
 
-describe TclReturnCommand do
+describe Tickleby::GlobalCommand do
+  before(:each) do
+    @interp = Tickleby::Interp.new
+  end
+
+  it "should have no affect if not executed in a proc body" do
+    @interp.eval("global x")
+
+    lambda {@interp.stack[-1].get_variable("x")}.should raise_error
+  end
+
+  it "should create a local variable linked to a global variable in proc scope" do
+
+    @interp.eval("proc test {} { 
+          global x y
+          set x 99
+          set y 100
+        }
+        test
+    ")
+    @interp.get_global("x").should == "99"
+    @interp.get_global("y").should == "100"
+  end
+  
+end
+
+describe Tickleby::ReturnCommand do
   
   before(:each) do
-    @interp = TclInterp.new
+    @interp = Tickleby::Interp.new
     @command = @interp.commands["return"]
   end
 

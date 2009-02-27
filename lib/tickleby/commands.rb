@@ -1,65 +1,76 @@
 # Copyright (c) 2009, Dave Ray <daveray@gmail.com>
 
-class TclSetCommand
-  def call(interp, words)
-    frame = interp.stack[-2]
-    if words.length == 1
-      return frame.variables[words[0]]
-    elsif words.length == 2
-      frame.set_variable(words[0], words[1])
-      return words[1]
+module Tickleby
+  class SetCommand
+    def call(interp, words)
+      frame = interp.get_frame.parent
+      if words.length == 1
+        return frame.get_variable(words[0])
+      elsif words.length == 2
+        frame.set_variable(words[0], words[1])
+        return words[1]
+      end
+      
+      # TODO raise error
     end
-    
-    # TODO raise error
   end
-end
 
-class TclPutsCommand
-  def call(interp, words)
-    if words.length == 1
-      puts words[0]
+  class GlobalCommand
+    def call(interp, words)
+      frame = interp.get_frame.parent
+      words.each do |w|
+        frame.map_variable w, interp.get_global_frame
+      end
     end
-
-    # TODO raise error
   end
-end
+
+  class PutsCommand
+    def call(interp, words)
+      if words.length == 1
+        puts words[0]
+      end
+
+      # TODO raise error
+    end
+  end
 
 
-class TclProcCommand
+  class ProcCommand
 
-  class TclProcedure
-    def initialize(name, args, body)
-      @name = name
-      @args = args
-      @body = body.split(//u)
+    class Procedure
+      def initialize(name, args, body)
+        @name = name
+        @args = args
+        @body = body.split(//u)
+      end
+
+      def call(interp, words)
+        frame = interp.stack[-1]
+        @args.zip(words).each do |name,value|
+          frame.set_variable name, value 
+        end
+
+        return interp.eval(StringInput.new(@body))
+      end
     end
 
     def call(interp, words)
-      frame = interp.stack[-1]
-      @args.zip(words).each do |name,value|
-        frame.set_variable name, value 
-      end
-
-      return interp.eval(TclStringInput.new(@body))
+      name = words.shift
+      args = words.shift.split
+      body = words.shift
+      p = Procedure.new(name, args, body)
+      interp.add_command name, p
     end
   end
 
-  def call(interp, words)
-    name = words.shift
-    args = words.shift.split
-    body = words.shift
-    p = TclProcedure.new(name, args, body)
-    interp.add_command name, p
-  end
-end
-
-class TclReturnCommand
-  def call(interp, words)
-    interp.return_flag = :return
-    if words.empty?
-      ""
-    else
-      words.shift
+  class ReturnCommand
+    def call(interp, words)
+      interp.return_flag = :return
+      if words.empty?
+        ""
+      else
+        words.shift
+      end
     end
   end
 end

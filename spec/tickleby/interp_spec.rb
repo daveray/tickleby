@@ -1,13 +1,52 @@
 require File.expand_path(File.join(File.dirname(__FILE__), '/../helper'))
 
-describe TclInterp do
+describe Tickleby::Frame do
   
   before(:each) do
-    @interp = TclInterp.new
+    @interp = Tickleby::Interp.new
+  end
+
+  it "should set a variable" do
+    frame = Tickleby::Frame.new(@interp)
+
+    frame.set_variable "foo", "99"
+    frame.get_variable("foo").should == "99"
+  end
+
+  it "should set a mapped variable in the correct frame" do
+    f0 = Tickleby::Frame.new(@interp)
+    f1 = Tickleby::Frame.new(@interp, f0)
+
+    f1.map_variable("x", f0)
+    f1.set_variable("x", "hi")
+    f0.get_variable("x").should == "hi"
+  end
+
+  it "should get a mapped variable from the corrent frame" do
+    f0 = Tickleby::Frame.new(@interp)
+    f1 = Tickleby::Frame.new(@interp, f0)
+
+    f0.set_variable("x", "hi")
+    f1.map_variable("x", f0)
+    f1.get_variable("x").should == "hi"
+  end
+
+  it "should raise an exception when a variable is not set" do
+    frame = Tickleby::Frame.new(@interp)
+
+    lambda {frame.get_variable("foo")}.should raise_error
+  end
+  
+end
+
+describe Tickleby::Interp do
+  
+  before(:each) do
+    @interp = Tickleby::Interp.new
   end
 
   def input(i) 
-    TclStringInput.new(i)
+    Tickleby::StringInput.new(i)
   end
 
   it "should consume a comment" do
@@ -121,6 +160,13 @@ describe TclInterp do
     result = @interp.parse_command input
     result.should == ["set", "a", "b"]
     input.remaining.should == "tail".length
+  end
+
+  it "should return an empty list when eof is reached while parsing a command" do
+    input = input("    ")
+    result = @interp.parse_command input
+    result.should == []
+    input.remaining.should == 0
   end
 
   it "should handle special escaped characters in quoted words" do

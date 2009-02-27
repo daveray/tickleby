@@ -8,9 +8,9 @@ require 'tickleby/interp'
 
 # If we're running from the command-line ...
 if $0 == __FILE__
-  interp = TclInterp.new
+  interp = Tickleby::Interp.new
   ARGV.each do |arg|
-    interp.eval(TclStringInput.new(IO.read(arg)))
+    interp.eval(Tickleby::StringInput.new(IO.read(arg)))
   end
 end
 
